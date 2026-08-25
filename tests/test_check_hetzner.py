@@ -206,6 +206,21 @@ class TestConfig(unittest.TestCase):
         self.assertEqual(cfg.cpu_types, ())  # "*" means no restriction
         self.assertTrue(cfg.has_notifier)
 
+    def test_token_var_indirection(self):
+        cfg = Config.from_env({"HCLOUD_TOKEN_VAR": "RO_SOMETHING", "RO_SOMETHING": "xyz"})
+        self.assertEqual(cfg.token, "xyz")
+
+    def test_token_var_takes_precedence_over_hcloud_token(self):
+        cfg = Config.from_env(
+            {"HCLOUD_TOKEN_VAR": "OTHER", "OTHER": "from-other", "HCLOUD_TOKEN": "direct"}
+        )
+        self.assertEqual(cfg.token, "from-other")
+
+    def test_token_var_pointing_at_nothing_says_so(self):
+        with self.assertRaises(HetznerWatchError) as ctx:
+            Config.from_env({"HCLOUD_TOKEN_VAR": "RO_MISSING"})
+        self.assertIn("RO_MISSING", str(ctx.exception))
+
     def test_bad_notify_mode_rejected(self):
         with self.assertRaises(HetznerWatchError):
             _cfg(notify_mode="shout")

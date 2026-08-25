@@ -81,37 +81,66 @@ to the Hetzner console.
 
 ---
 
-## Cost: read this before leaving it on `*/5`
+## Cost
 
-This is a **private** repo, so Actions minutes are billed, and GitHub
-[rounds every job up to a whole minute](https://docs.github.com/en/billing/reference/actions-runner-pricing).
-A run takes ~20 seconds but bills as 1 minute. Free plan includes 2,000 min/month
-(Pro and Team: 3,000); Linux 2-core is $0.006/min beyond that.
+**On a public repo, standard runners are unmetered — this costs nothing at any cadence.**
 
-| Cron | Runs/month | Billed min/month | Cost on Free | Cost on Pro/Team |
-|---|---|---|---|---|
-| `*/5 * * * *` (default) | ~8,770 | ~8,770 | **~$41/mo** | ~$35/mo |
-| `*/10 * * * *` | ~4,380 | ~4,380 | ~$14/mo | ~$8/mo |
-| `*/15 * * * *` | ~2,920 | ~2,920 | ~$6/mo | **free** |
-| `*/30 * * * *` | ~1,460 | ~1,460 | **free** | **free** |
+On a *private* repo, minutes are billed and GitHub
+[rounds every job up to a whole minute](https://docs.github.com/en/billing/reference/actions-runner-pricing),
+so a 20-second run bills as 1. The monthly allowance (2,000 min on Free, 3,000 on
+Pro/Team) is shared across **all** your private repos, so a frequent poller can quietly
+crowd out the CI you actually depend on.
 
-Three ways to make this free:
+| Cron | Runs/month | Billed min/month | Fits a 3,000-min allowance? |
+|---|---|---|---|
+| `*/5 * * * *` | ~8,770 | ~8,770 | no — ~$35/mo over |
+| `*/10 * * * *` | ~4,380 | ~4,380 | no — ~$8/mo over |
+| `*/30 * * * *` (default) | ~1,460 | ~1,460 | only if ~half your allowance is free |
 
-1. **Slow the cadence** — edit the `cron` line in `.github/workflows/monitor.yml`.
-   `*/30` fits inside the Free allowance.
-2. **Make the repo public** — standard runners are unmetered for public repos. Safe
-   here *only* if you first move `NTFY_TOPIC` to a private-by-obscurity long random
-   string; secrets themselves stay encrypted either way.
-3. **Run it somewhere else** — the script is self-contained, so a `cron` line on any
-   box you already own costs nothing:
-   `*/5 * * * * cd /path/to/repo && HCLOUD_TOKEN=... NTFY_TOPIC=... python3 check_hetzner.py`
+Check what's left before committing to a private schedule:
+
+```bash
+gh api "/users/$(gh api /user -q .login)/settings/billing/usage?year=$(date +%Y)&month=$(date +%-m)" \
+  -q '[.usageItems[] | select(.product=="actions" and .unitType=="Minutes")] | map(.quantity) | add'
+```
+
+That total covers public *and* private repos; only the private ones draw down the
+allowance. If the headroom is tight, make this repo public, or run it on a machine you
+already own — the script is self-contained:
+
+```
+*/30 * * * * cd /path/to/repo && HCLOUD_TOKEN=... NTFY_TOPIC=... python3 check_hetzner.py
+```
+
+### Is a scheduled monitor allowed on a public repo?
+
+[GitHub's Actions terms](https://docs.github.com/en/site-policy/github-terms/github-terms-for-additional-products-and-features)
+set two limits that matter here, and this workflow sits inside both:
+
+> Any activity that places a burden on our servers, where that burden is
+> disproportionate to the benefits provided to users (for example, don't use Actions as
+> a content delivery network or as part of a serverless application, **but a low benefit
+> Action could be ok if it's also low burden**)
+
+> If using GitHub-hosted runners, any other activity **unrelated to the production,
+> testing, deployment, or publication of the software project associated with the
+> repository** where GitHub Actions are used
+
+A ~20-second job 48 times a day is low burden by any reading of the first. And the
+second turns on the word *unrelated*: the software project associated with this
+repository **is** the stock checker, so running it is the project, not an unrelated
+workload parked on a convenient runner. That distinction is the whole point of the
+clause — it exists to stop Actions being used as free general-purpose compute.
+
+Keep it that way: don't crank the cadence back up on a public repo just because the
+minutes are free, and don't graft unrelated jobs onto this repo.
 
 ## Two scheduling caveats
 
 - **`schedule` is best-effort.** GitHub enforces a 5-minute floor and openly delays or
-  drops scheduled runs under load — 10–20 minutes late is common on the hour. Treat
-  this as "within ~15 minutes", not real time. If you're racing for genuinely scarce
-  stock, run the script from a machine you control instead.
+  drops scheduled runs under load — 10–20 minutes late is common on the hour. At `*/30`
+  that means "within the hour", which is fine for restocks that stay open for hours. If
+  you ever need to-the-minute reaction, run the script from a machine you control.
 - **Scheduled workflows are disabled after 60 days without repo activity.** If alerts
   go quiet for a long stretch, check the Actions tab; any commit, or
   `gh workflow enable monitor.yml`, brings it back.
@@ -184,6 +213,25 @@ python3 check_hetzner.py --reset-state        # re-alert on stock you were alrea
 python3 check_hetzner.py --fixture tests/fixture_server_types.json
 python3 -m unittest discover -s tests -v
 ```
+
+### If your token lives under a different name
+
+A keyfile holding many credentials needs disambiguating names (`RO_TW_HETZNER`:
+read-only, TW server, Hetzner). A single-purpose environment wants the ecosystem
+convention — `HCLOUD_TOKEN` is what the `hcloud` CLI and the Terraform provider read,
+so anything you drop in works untranslated. Both names are right in their own scope.
+
+Rather than renaming either side or copying the secret twice, point at it:
+
+```bash
+source ~/your-keyfile
+HCLOUD_TOKEN_VAR=RO_TW_HETZNER python3 check_hetzner.py
+```
+
+`HCLOUD_TOKEN_VAR` names the variable to read the token *from*, and takes precedence
+over `HCLOUD_TOKEN`. Handy for switching projects, too — the same repo can be pointed
+at a different Hetzner project by changing one variable name. (Availability and pricing
+are identical across projects, so one token is enough for monitoring.)
 
 ## How availability is actually determined
 

@@ -118,6 +118,20 @@ def _env_bool(env: Mapping[str, str], name: str, default: bool = False) -> bool:
     return raw.lower() in {"1", "true", "yes", "on"}
 
 
+def _read_token(env: Mapping[str, str]) -> tuple[str | None, str]:
+    """Return ``(token, source_variable_name)``.
+
+    Credential managers rarely use the tool's preferred name -- a file holding many
+    keys needs disambiguation (``RO_TW_HETZNER``) where a single-purpose environment
+    wants the ecosystem convention (``HCLOUD_TOKEN``, which the hcloud CLI and the
+    Terraform provider also read). ``HCLOUD_TOKEN_VAR`` bridges the two by naming the
+    variable to read from, so neither side has to be renamed and the secret is never
+    duplicated.
+    """
+    name = _env_str(env, "HCLOUD_TOKEN_VAR", "HCLOUD_TOKEN")
+    return _env_str(env, name), name
+
+
 @dataclass(frozen=True)
 class Config:
     """Everything the checker needs. Empty tuple for a filter means "don't filter"."""
@@ -169,12 +183,19 @@ class Config:
         a test notification, or replaying a saved response via ``--fixture``.
         """
         env = os.environ if env is None else env
-        token = _env_str(env, "HCLOUD_TOKEN")
+        token, token_var = _read_token(env)
         if not token and require_token:
+            if token_var != "HCLOUD_TOKEN":
+                raise HetznerWatchError(
+                    f"HCLOUD_TOKEN_VAR points at {token_var!r}, but that variable is "
+                    f"empty or unset. Did you source the file that defines it?"
+                )
             raise HetznerWatchError(
                 "HCLOUD_TOKEN is not set. Create a READ-ONLY API token in the Hetzner "
                 "Cloud Console (Security > API tokens) and export it, or set it as a "
-                "GitHub repository secret."
+                "GitHub repository secret. If your token already lives in a "
+                "differently-named variable, point at it with "
+                "HCLOUD_TOKEN_VAR=<THAT_NAME> instead of duplicating it."
             )
         return cls(
             token=token or "",
