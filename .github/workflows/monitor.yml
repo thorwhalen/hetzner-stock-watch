@@ -70,13 +70,16 @@ jobs:
           # No dependencies: the checker is pure standard library (urllib + json).
 
       - name: Verify secrets are present
+        env:
+          # A notify_test never calls Hetzner, so it only needs a notification channel.
+          NEEDS_TOKEN: ${{ inputs.notify_test && 'false' || 'true' }}
         run: |
-          if [ -z "$HCLOUD_TOKEN" ]; then
-            echo "::error::HCLOUD_TOKEN secret is not set. Run: gh secret set HCLOUD_TOKEN"
-            exit 1
-          fi
           if [ -z "$NTFY_TOPIC" ] && [ -z "$WEBHOOK_URL" ]; then
             echo "::error::Set NTFY_TOPIC (or WEBHOOK_URL), otherwise nothing can alert you."
+            exit 1
+          fi
+          if [ "$NEEDS_TOKEN" = "true" ] && [ -z "$HCLOUD_TOKEN" ]; then
+            echo "::error::HCLOUD_TOKEN secret is not set. Run: gh secret set HCLOUD_TOKEN"
             exit 1
           fi
 

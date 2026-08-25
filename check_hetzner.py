@@ -159,18 +159,24 @@ class Config:
         return bool(self.ntfy_topic or self.webhook_url)
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> "Config":
-        """Build a Config from environment variables (defaults to ``os.environ``)."""
+    def from_env(
+        cls, env: Mapping[str, str] | None = None, *, require_token: bool = True
+    ) -> "Config":
+        """Build a Config from environment variables (defaults to ``os.environ``).
+
+        ``require_token=False`` supports the paths that never touch the API -- sending
+        a test notification, or replaying a saved response via ``--fixture``.
+        """
         env = os.environ if env is None else env
         token = _env_str(env, "HCLOUD_TOKEN")
-        if not token:
+        if not token and require_token:
             raise HetznerWatchError(
                 "HCLOUD_TOKEN is not set. Create a READ-ONLY API token in the Hetzner "
                 "Cloud Console (Security > API tokens) and export it, or set it as a "
                 "GitHub repository secret."
             )
         return cls(
-            token=token,
+            token=token or "",
             min_memory_gb=_env_float(env, "MIN_MEMORY_GB", DEFAULT_MIN_MEMORY_GB),
             max_memory_gb=_env_float(env, "MAX_MEMORY_GB", None),
             cpu_types=_env_csv(env, "CPU_TYPES", DEFAULT_CPU_TYPES),
@@ -665,9 +671,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser(env_cfg).parse_args(argv)
 
     if env_cfg is None:
-        if not args.fixture:
+        if not (args.fixture or args.notify_test):
             raise env_error
-        env_cfg = Config(token="fixture", enrich_locations=False)
+        env_cfg = replace(
+            Config.from_env(require_token=False), enrich_locations=not args.fixture
+        )
 
     cfg = replace(
         env_cfg,

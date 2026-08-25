@@ -25,7 +25,7 @@ gh secret set NTFY_TOPIC            # paste your topic name (skip if already set
 
 # 3. Enable the schedule, then prove the whole chain works end to end.
 gh workflow enable monitor.yml
-gh workflow run monitor.yml -f notify_test=true
+gh workflow run monitor.yml -f notify_test=true   # works without HCLOUD_TOKEN too
 ```
 
 If a "Hetzner stock watch is live" notification lands on your phone, you're done —
