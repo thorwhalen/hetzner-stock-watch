@@ -51,6 +51,7 @@ jobs:
       # --- what to watch for: repository *variables*, not secrets (Settings > Variables) ---
       MIN_MEMORY_GB: ${{ vars.MIN_MEMORY_GB }}
       MAX_MEMORY_GB: ${{ vars.MAX_MEMORY_GB }}
+      MAX_PRICE_MONTHLY: ${{ vars.MAX_PRICE_MONTHLY }}
       CPU_TYPES: ${{ vars.CPU_TYPES }}
       ARCHITECTURES: ${{ vars.ARCHITECTURES }}
       LOCATIONS: ${{ vars.LOCATIONS }}

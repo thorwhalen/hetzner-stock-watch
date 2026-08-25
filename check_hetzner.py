@@ -126,6 +126,7 @@ class Config:
     # --- what counts as a match ---
     min_memory_gb: float = DEFAULT_MIN_MEMORY_GB
     max_memory_gb: float | None = None
+    max_price_monthly: float | None = None
     cpu_types: tuple[str, ...] = DEFAULT_CPU_TYPES
     architectures: tuple[str, ...] = ()
     locations: tuple[str, ...] = ()
@@ -179,6 +180,7 @@ class Config:
             token=token or "",
             min_memory_gb=_env_float(env, "MIN_MEMORY_GB", DEFAULT_MIN_MEMORY_GB),
             max_memory_gb=_env_float(env, "MAX_MEMORY_GB", None),
+            max_price_monthly=_env_float(env, "MAX_PRICE_MONTHLY", None),
             cpu_types=_env_csv(env, "CPU_TYPES", DEFAULT_CPU_TYPES),
             architectures=_env_csv(env, "ARCHITECTURES"),
             locations=_env_csv(env, "LOCATIONS"),
@@ -354,6 +356,25 @@ def _price_for(server_type: Mapping, location_name: str) -> Mapping:
     return {}
 
 
+def _within_budget(price: Mapping, ceiling: float | None) -> bool:
+    """Is this location's monthly price within ``ceiling`` (gross, incl. VAT)?
+
+    "Cost-optimized" is ultimately a statement about price, and Hetzner's family names
+    do not track it -- cpx51 costs more than cpx62. A ceiling is the only filter that
+    keeps an always-in-stock premium plan from consuming the one alert you get.
+    An unpriced location passes: a missing price is not evidence of an expensive one.
+    """
+    if ceiling is None:
+        return True
+    gross = (price.get("price_monthly") or {}).get("gross")
+    if gross is None:
+        return True
+    try:
+        return float(gross) <= ceiling
+    except (TypeError, ValueError):
+        return True
+
+
 def _location_label(name: str, locations: Mapping[str, dict]) -> str:
     loc = locations.get(name)
     if not loc:
@@ -393,6 +414,8 @@ def iter_matching_offers(
             if entry.get("available", True) is False:
                 continue
             price = _price_for(server_type, name)
+            if not _within_budget(price, cfg.max_price_monthly):
+                continue
             yield Offer(
                 server_type=server_type.get("name", "?"),
                 description=server_type.get("description", ""),
@@ -530,6 +553,8 @@ def _spec_summary(cfg: Config) -> str:
         bits.append(f"families {', '.join(cfg.families)}")
     if cfg.architectures:
         bits.append(f"arch {', '.join(cfg.architectures)}")
+    if cfg.max_price_monthly is not None:
+        bits.append(f"<={cfg.max_price_monthly:g} {cfg.currency}/mo")
     bits.append(f"locations {', '.join(cfg.locations)}" if cfg.locations else "any location")
     return "; ".join(bits)
 
@@ -633,6 +658,8 @@ def _build_parser(cfg: Config | None) -> argparse.ArgumentParser:
     d = cfg or Config(token="")
     parser.add_argument("--min-memory-gb", type=float, default=d.min_memory_gb)
     parser.add_argument("--max-memory-gb", type=float, default=d.max_memory_gb)
+    parser.add_argument("--max-price-monthly", type=float, default=d.max_price_monthly,
+                        help="ignore anything above this monthly price (gross, incl. VAT)")
     parser.add_argument("--cpu-types", default=",".join(d.cpu_types) or "*",
                         help="comma list of shared/dedicated, or * for any")
     parser.add_argument("--architectures", default=",".join(d.architectures) or "*")
@@ -681,6 +708,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         env_cfg,
         min_memory_gb=args.min_memory_gb,
         max_memory_gb=args.max_memory_gb,
+        max_price_monthly=args.max_price_monthly,
         cpu_types=_csv_arg(args.cpu_types),
         architectures=_csv_arg(args.architectures),
         locations=_csv_arg(args.locations),

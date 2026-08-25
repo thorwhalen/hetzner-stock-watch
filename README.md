@@ -132,6 +132,7 @@ or `gh variable set`) — no code change needed:
 |---|---|---|
 | `MIN_MEMORY_GB` | `30` | `60` |
 | `MAX_MEMORY_GB` | *(none)* | `32` — pins it to 32 GB exactly |
+| `MAX_PRICE_MONTHLY` | *(none)* | `80` — ignore anything dearer (gross, incl. VAT) |
 | `CPU_TYPES` | `shared` | `shared,dedicated` or `*` for any |
 | `ARCHITECTURES` | *(any)* | `arm` or `x86` |
 | `LOCATIONS` | *(any)* | `fsn1,nbg1,hel1` for EU only |
@@ -143,10 +144,30 @@ or `gh variable set`) — no code change needed:
 
 ```bash
 gh variable set LOCATIONS --body 'fsn1,nbg1,hel1'
-gh variable set MAX_MEMORY_GB --body '32'
+gh variable set MAX_PRICE_MONTHLY --body '80'
 ```
 
 Every variable has a matching CLI flag — see `python3 check_hetzner.py --help`.
+
+### Set a price ceiling, or you'll get one useless alert and then silence
+
+At the time of writing, the 32 GB shared-vCPU line looks like this in the EU:
+
+| Type | Arch | RAM | Price/mo | fsn1 / nbg1 / hel1 |
+|---|---|---|---|---|
+| `cx53` | x86 | 32 GB | €34.99 | sold out |
+| `cax41` | arm | 32 GB | €48.49 | sold out |
+| `cpx62` | x86 | 32 GB | €152.99 | **in stock** |
+
+Everything on that list is "shared vCPU, 32 GB", so a filter based only on RAM and
+`cpu_type` matches `cpx62` — which is always in stock at four times the price. You'd
+get one alert immediately, and then, because alerts are deduplicated, nothing at all
+when `cx53` actually came back.
+
+Family names don't rescue you either: `cpx51` is €279/mo while `cpx62` is €153/mo, so
+the numbering doesn't order by price. **`MAX_PRICE_MONTHLY` is the filter that
+expresses what "cost-optimized" actually means.** `SERVER_TYPE_FAMILIES=cx,cax` also
+works, but it silently excludes any new cheap family Hetzner introduces.
 
 ## Running it locally
 

@@ -72,6 +72,18 @@ class TestMatching(unittest.TestCase):
         self.assertIn("cx52@nbg1", keys)
         self.assertNotIn("cax51@fsn1", keys)  # 64 GB is above the ceiling
 
+    def test_price_ceiling_drops_expensive_plans(self):
+        # cpx51@ash is 64.90 gross; cax41@fsn1 is 34.97; cx52@nbg1 is 65.33.
+        self.assertEqual(_keys(_cfg(max_price_monthly=50.0)), {"cax41@fsn1"})
+
+    def test_price_ceiling_keeps_unpriced_locations(self):
+        # cax51 has a price entry, so raise the ceiling above it to confirm the
+        # boundary is inclusive rather than accidentally strict.
+        self.assertIn("cax51@fsn1", _keys(_cfg(max_price_monthly=71.40)))
+
+    def test_no_ceiling_means_no_price_filtering(self):
+        self.assertIn("cpx51@ash", _keys(_cfg(max_price_monthly=None)))
+
     def test_permanently_retired_type_excluded_even_though_available_is_true(self):
         # cx51@fsn1 has available: true but unavailable_after is in the past.
         self.assertNotIn("cx51@fsn1", _keys(_cfg(include_deprecated=True)))
