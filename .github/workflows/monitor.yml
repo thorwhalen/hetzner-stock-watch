@@ -1,0 +1,107 @@
+name: Hetzner stock monitor
+
+# Polls the Hetzner Cloud API and alerts the moment a matching server type is buyable.
+#
+# NOTE ON COST: on a PRIVATE repo, Actions minutes are billed and GitHub rounds every
+# run up to a full minute. */5 is ~288 runs/day (~8,600 min/month), well past the
+# 2,000-minute free allowance. See the "Cost" section of the README before leaving
+# this on the 5-minute cadence.
+
+on:
+  schedule:
+    # Every 5 minutes. GitHub enforces a 5-minute floor and frequently delays or
+    # drops scheduled runs under load, so treat this as "within ~15 min", not real time.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      notify_test:
+        description: 'Send a test notification instead of checking stock'
+        type: boolean
+        default: false
+      reset_state:
+        description: 'Forget past sightings, so anything in stock alerts again'
+        type: boolean
+        default: false
+      notify_mode:
+        description: 'new = only newly-appeared stock | always = every run | never = log only'
+        type: choice
+        options: [new, always, never]
+        default: new
+
+permissions:
+  contents: read
+
+# Never let a delayed run stack on top of a fresh one.
+concurrency:
+  group: hetzner-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # --- required secrets ---
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      # --- optional secrets: self-hosted ntfy, protected topics, generic webhook ---
+      NTFY_SERVER: ${{ secrets.NTFY_SERVER }}
+      NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+      WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+      # --- what to watch for: repository *variables*, not secrets (Settings > Variables) ---
+      MIN_MEMORY_GB: ${{ vars.MIN_MEMORY_GB }}
+      MAX_MEMORY_GB: ${{ vars.MAX_MEMORY_GB }}
+      CPU_TYPES: ${{ vars.CPU_TYPES }}
+      ARCHITECTURES: ${{ vars.ARCHITECTURES }}
+      LOCATIONS: ${{ vars.LOCATIONS }}
+      SERVER_TYPES: ${{ vars.SERVER_TYPES }}
+      SERVER_TYPE_FAMILIES: ${{ vars.SERVER_TYPE_FAMILIES }}
+      INCLUDE_DEPRECATED: ${{ vars.INCLUDE_DEPRECATED }}
+      CURRENCY: ${{ vars.CURRENCY }}
+      NOTIFY_MODE: ${{ inputs.notify_mode || vars.NOTIFY_MODE }}
+      STATE_FILE: .state/seen.json
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          # No dependencies: the checker is pure standard library (urllib + json).
+
+      - name: Verify secrets are present
+        run: |
+          if [ -z "$HCLOUD_TOKEN" ]; then
+            echo "::error::HCLOUD_TOKEN secret is not set. Run: gh secret set HCLOUD_TOKEN"
+            exit 1
+          fi
+          if [ -z "$NTFY_TOPIC" ] && [ -z "$WEBHOOK_URL" ]; then
+            echo "::error::Set NTFY_TOPIC (or WEBHOOK_URL), otherwise nothing can alert you."
+            exit 1
+          fi
+
+      # Carries the "already alerted" set between runs so a plan that stays in stock
+      # notifies once rather than on every poll. Rolling key: unique on save, prefix
+      # match on restore.
+      - name: Restore alert state
+        uses: actions/cache/restore@v4
+        with:
+          path: .state
+          key: hetzner-state-${{ github.run_id }}
+          restore-keys: hetzner-state-
+
+      - name: Send test notification
+        if: ${{ inputs.notify_test }}
+        run: python check_hetzner.py --notify-test
+
+      - name: Check Hetzner stock
+        if: ${{ !inputs.notify_test }}
+        run: |
+          python check_hetzner.py ${{ inputs.reset_state && '--reset-state' || '' }}
+
+      - name: Save alert state
+        if: ${{ always() && !inputs.notify_test }}
+        uses: actions/cache/save@v4
+        with:
+          path: .state
+          key: hetzner-state-${{ github.run_id }}

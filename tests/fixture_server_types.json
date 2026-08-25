@@ -1,0 +1,95 @@
+{
+  "server_types": [
+    {
+      "id": 100, "name": "cx52", "description": "CX52",
+      "cores": 16, "memory": 32.0, "disk": 360,
+      "cpu_type": "shared", "architecture": "x86", "category": "Shared vCPU",
+      "storage_type": "local", "deprecated": false,
+      "prices": [
+        {"location": "fsn1", "price_monthly": {"net": "54.9000000000", "gross": "65.3310000000"}},
+        {"location": "nbg1", "price_monthly": {"net": "54.9000000000", "gross": "65.3310000000"}},
+        {"location": "hel1", "price_monthly": {"net": "54.9000000000", "gross": "65.3310000000"}}
+      ],
+      "locations": [
+        {"id": 1, "name": "fsn1", "deprecation": null, "recommended": true,  "available": false},
+        {"id": 2, "name": "nbg1", "deprecation": null, "recommended": false, "available": true},
+        {"id": 3, "name": "hel1", "deprecation": null, "recommended": false, "available": false}
+      ]
+    },
+    {
+      "id": 101, "name": "cax41", "description": "CAX41",
+      "cores": 16, "memory": 32.0, "disk": 320,
+      "cpu_type": "shared", "architecture": "arm", "category": "Shared vCPU",
+      "storage_type": "local", "deprecated": false,
+      "prices": [
+        {"location": "fsn1", "price_monthly": {"net": "29.3900000000", "gross": "34.9741000000"}},
+        {"location": "hel1", "price_monthly": {"net": "29.3900000000", "gross": "34.9741000000"}}
+      ],
+      "locations": [
+        {"id": 1, "name": "fsn1", "deprecation": null, "recommended": true, "available": true},
+        {"id": 3, "name": "hel1", "deprecation": null, "recommended": false, "available": false}
+      ]
+    },
+    {
+      "id": 102, "name": "cpx51", "description": "CPX51",
+      "cores": 16, "memory": 32.0, "disk": 360,
+      "cpu_type": "shared", "architecture": "x86", "category": "Shared vCPU",
+      "storage_type": "local", "deprecated": false,
+      "prices": [{"location": "ash", "price_monthly": {"net": "64.9000000000", "gross": "64.9000000000"}}],
+      "locations": [
+        {"id": 5, "name": "ash", "deprecation": null, "recommended": false, "available": true}
+      ]
+    },
+    {
+      "id": 103, "name": "ccx33", "description": "CCX33",
+      "cores": 8, "memory": 32.0, "disk": 240,
+      "cpu_type": "dedicated", "architecture": "x86", "category": "Dedicated vCPU",
+      "storage_type": "local", "deprecated": false,
+      "prices": [{"location": "fsn1", "price_monthly": {"net": "119.0", "gross": "141.61"}}],
+      "locations": [
+        {"id": 1, "name": "fsn1", "deprecation": null, "recommended": false, "available": true}
+      ]
+    },
+    {
+      "id": 104, "name": "cx42", "description": "CX42 (16 GB - too small)",
+      "cores": 8, "memory": 16.0, "disk": 160,
+      "cpu_type": "shared", "architecture": "x86", "category": "Shared vCPU",
+      "storage_type": "local", "deprecated": false,
+      "prices": [{"location": "fsn1", "price_monthly": {"net": "27.5", "gross": "32.72"}}],
+      "locations": [
+        {"id": 1, "name": "fsn1", "deprecation": null, "recommended": true, "available": true}
+      ]
+    },
+    {
+      "id": 105, "name": "cx51", "description": "CX51 (retired gen)",
+      "cores": 8, "memory": 32.0, "disk": 240,
+      "cpu_type": "shared", "architecture": "x86", "category": "Shared vCPU",
+      "storage_type": "local", "deprecated": true,
+      "prices": [{"location": "fsn1", "price_monthly": {"net": "35.0", "gross": "41.65"}}],
+      "locations": [
+        {"id": 1, "name": "fsn1", "recommended": false, "available": true,
+         "deprecation": {"announced": "2020-01-01T00:00:00+00:00", "unavailable_after": "2021-01-01T00:00:00+00:00"}}
+      ]
+    },
+    {
+      "id": 106, "name": "cx53", "description": "CX53 (sunsetting, still buyable)",
+      "cores": 16, "memory": 32.0, "disk": 360,
+      "cpu_type": "shared", "architecture": "x86", "category": "Shared vCPU",
+      "storage_type": "local", "deprecated": true,
+      "prices": [{"location": "nbg1", "price_monthly": {"net": "50.0", "gross": "59.5"}}],
+      "locations": [
+        {"id": 2, "name": "nbg1", "recommended": false, "available": true,
+         "deprecation": {"announced": "2099-01-01T00:00:00+00:00", "unavailable_after": "2099-06-01T00:00:00+00:00"}}
+      ]
+    },
+    {
+      "id": 107, "name": "cax51", "description": "CAX51 (no availability field)",
+      "cores": 16, "memory": 64.0, "disk": 360,
+      "cpu_type": "shared", "architecture": "arm", "category": "Shared vCPU",
+      "storage_type": "local", "deprecated": false,
+      "prices": [{"location": "fsn1", "price_monthly": {"net": "60.0", "gross": "71.4"}}],
+      "locations": [{"id": 1, "name": "fsn1", "deprecation": null, "recommended": false}]
+    }
+  ],
+  "meta": {"pagination": {"page": 1, "per_page": 50, "next_page": null, "last_page": 1, "total_entries": 8}}
+}

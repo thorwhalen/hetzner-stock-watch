@@ -1,0 +1,31 @@
+name: tests
+
+# The checker has no dependencies, so this is fast and worth running on every push:
+# a broken filter is the difference between an alert and silence.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Smoke-test the CLI against the fixture (no API token needed)
+        run: |
+          python check_hetzner.py \
+            --fixture tests/fixture_server_types.json \
+            --state-file "${RUNNER_TEMP}/seen.json" \
+            --json
