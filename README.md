@@ -13,19 +13,25 @@ buyable in a region you care about.
 
 ## Quick start
 
+The monitor workflow ships **disabled**, so it can't fail on a missing token before
+you've had a chance to add one. Three steps to turn it on:
+
 ```bash
-# 1. Create a READ-ONLY Hetzner API token (see below) and pick an ntfy topic.
+# 1. Create a READ-ONLY Hetzner API token (see below) and add it.
 gh secret set HCLOUD_TOKEN          # paste the token when prompted
-gh secret set NTFY_TOPIC            # paste your topic name
+gh secret set NTFY_TOPIC            # paste your topic name (skip if already set)
 
 # 2. Subscribe to that topic on your phone (ntfy app) or at https://ntfy.sh/<TOPIC>
 
-# 3. Prove the whole chain works end to end.
+# 3. Enable the schedule, then prove the whole chain works end to end.
+gh workflow enable monitor.yml
 gh workflow run monitor.yml -f notify_test=true
 ```
 
 If a "Hetzner stock watch is live" notification lands on your phone, you're done —
-the schedule takes over from there.
+the schedule takes over from there. Check `gh run list --workflow=monitor.yml` if not.
+
+Turn it off again once you've got your server: `gh workflow disable monitor.yml`.
 
 ---
 
