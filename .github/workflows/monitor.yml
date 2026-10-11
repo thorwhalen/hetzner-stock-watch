@@ -3,17 +3,17 @@ name: Hetzner stock monitor
 # Polls the Hetzner Cloud API and alerts the moment a matching server type is buyable.
 #
 # NOTE ON COST: standard runners are unmetered on PUBLIC repos. On a PRIVATE repo
-# every run bills as a full minute (GitHub rounds up), so */30 is ~1,460 min/month
+# every run bills as a full minute (GitHub rounds up), so */15 is ~2,920 min/month
 # against a 2,000 (Free) or 3,000 (Pro/Team) monthly allowance -- shared with every
 # other private repo you own. See the "Cost" section of the README.
 
 on:
   schedule:
-    # Every 30 minutes. GitHub frequently delays or drops scheduled runs under load,
+    # Every 15 minutes. GitHub frequently delays or drops scheduled runs under load,
     # so treat this as "within the hour", not to-the-minute. That is the right
     # trade for restocks that stay open for hours, and it keeps the burden low
     # enough to sit comfortably inside GitHub's Actions terms on a public repo.
-    - cron: '*/30 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
     inputs:
       notify_test:

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Poll the Hetzner Cloud API for in-stock cost-optimized servers and raise an alert.
+"""Poll the Hetzner Cloud API for an in-stock server type and raise an alert.
+
+Out of the box (env defaults) it waits for ``cx33`` (8 GB) in ``nbg1``; alerts on
+the transition to available and again when it sells out.
 
 Hetzner sells out popular shared-vCPU plans (``cx``/``cpx``/``cax``) for weeks at a
 time. This module answers one question on every run -- *is a server type matching my
@@ -59,6 +62,8 @@ API_ROOT = "https://api.hetzner.cloud/v1"
 DEFAULT_NTFY_SERVER = "https://ntfy.sh"
 DEFAULT_MIN_MEMORY_GB = 30.0
 DEFAULT_CPU_TYPES = ("shared",)
+DEFAULT_SERVER_TYPES = ("cx33",)  # env default: the 8 GB cost-optimized plan being waited for
+DEFAULT_LOCATIONS = ("nbg1",)  # env default: where the server to rescale lives
 DEFAULT_NOTIFY_MODE = "new"
 DEFAULT_STATE_FILE = ".state/seen.json"
 DEFAULT_TIMEOUT_S = 20.0
@@ -204,8 +209,8 @@ class Config:
             max_price_monthly=_env_float(env, "MAX_PRICE_MONTHLY", None),
             cpu_types=_env_csv(env, "CPU_TYPES", DEFAULT_CPU_TYPES),
             architectures=_env_csv(env, "ARCHITECTURES"),
-            locations=_env_csv(env, "LOCATIONS"),
-            server_types=_env_csv(env, "SERVER_TYPES"),
+            locations=_env_csv(env, "LOCATIONS", DEFAULT_LOCATIONS),
+            server_types=_env_csv(env, "SERVER_TYPES", DEFAULT_SERVER_TYPES),
             families=_env_csv(env, "SERVER_TYPE_FAMILIES"),
             category_match=_env_str(env, "CATEGORY_MATCH"),
             include_deprecated=_env_bool(env, "INCLUDE_DEPRECATED"),
@@ -467,12 +472,22 @@ def load_seen(path: str) -> set[str]:
         return set()
 
 
-def save_seen(path: str, seen: Iterable[str]) -> None:
+def load_spec(path: str) -> str | None:
+    """The spec summary the state was recorded under (None if absent/corrupt)."""
+    try:
+        with open(path, encoding="utf-8") as stream:
+            return json.load(stream).get("spec")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return None
+
+
+def save_seen(path: str, seen: Iterable[str], *, spec: str | None = None) -> None:
     directory = os.path.dirname(path)
     if directory:
         os.makedirs(directory, exist_ok=True)
     payload = {
         "seen": sorted(seen),
+        "spec": spec,
         "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     with open(path, "w", encoding="utf-8") as stream:
@@ -565,7 +580,8 @@ def notify(
 
 def _spec_summary(cfg: Config) -> str:
     if cfg.server_types:
-        return f"server types {', '.join(cfg.server_types)}"
+        where = f"locations {', '.join(cfg.locations)}" if cfg.locations else "any location"
+        return f"server types {', '.join(cfg.server_types)}; {where}"
     bits = [f">={cfg.min_memory_gb:g} GB RAM"]
     if cfg.max_memory_gb is not None:
         bits.append(f"<={cfg.max_memory_gb:g} GB RAM")
@@ -610,6 +626,7 @@ class CheckResult:
     offers: list[Offer] = field(default_factory=list)
     fresh: list[Offer] = field(default_factory=list)
     notified: list[str] = field(default_factory=list)
+    gone: list[str] = field(default_factory=list)
 
 
 def check(
@@ -629,10 +646,16 @@ def check(
         iter_matching_offers(server_types, cfg, locations=locations, now=now),
         key=lambda o: (-o.memory_gb, o.server_type, o.location),
     )
+    spec = _spec_summary(cfg)
     seen = load_seen(cfg.state_file)
+    if load_spec(cfg.state_file) != spec:
+        # State recorded for a different watch (e.g. the old 32 GB spec): its keys say
+        # nothing about this one, so they must not read as "went out of stock".
+        seen = set()
     current = {o.key for o in offers}
     fresh = [o for o in offers if o.key not in seen]
-    result = CheckResult(offers=offers, fresh=fresh)
+    gone = sorted(seen - current)
+    result = CheckResult(offers=offers, fresh=fresh, gone=gone)
 
     print(f"Watching: {_spec_summary(cfg)}")
     print(f"Scanned {len(server_types)} server types.")
@@ -654,7 +677,8 @@ def check(
                 f"{len(to_announce)} matching server(s) in stock:",
                 *(f"- {o.one_line()}" for o in to_announce),
                 "",
-                f"Deploy now: {CONSOLE_URL}",
+                f"Act now: shut down the server, pick the plan, click Rescale. "
+                f"Stock is a signal, not a guarantee. {CONSOLE_URL}",
             ]
         )
         result.notified = notify(cfg, title=title, message=body, offers=to_announce)
@@ -662,7 +686,19 @@ def check(
     elif to_announce:
         print("No notifier configured (set NTFY_TOPIC or WEBHOOK_URL) - not alerting.")
 
-    save_seen(cfg.state_file, current)
+    if gone and cfg.notify_mode != "never":
+        print(f"NO LONGER AVAILABLE: {', '.join(gone)}")
+        if cfg.has_notifier:
+            result.notified += notify(
+                cfg,
+                title=f"Hetzner: {gone[0]} sold out again",
+                message="Back out of stock (no action needed):\n"
+                + "\n".join(f"- {key}" for key in gone),
+                priority="default",
+                tags="x",
+            )
+
+    save_seen(cfg.state_file, current, spec=spec)
     _write_step_summary(cfg, offers, fresh)
     return result
 
@@ -676,7 +712,7 @@ def _build_parser(cfg: Config | None) -> argparse.ArgumentParser:
         description=__doc__.splitlines()[0],
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    d = cfg or Config(token="")
+    d = cfg or Config.from_env(require_token=False)
     parser.add_argument("--min-memory-gb", type=float, default=d.min_memory_gb)
     parser.add_argument("--max-memory-gb", type=float, default=d.max_memory_gb)
     parser.add_argument("--max-price-monthly", type=float, default=d.max_price_monthly,
@@ -747,8 +783,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         delivered = notify(
             cfg,
-            title="Hetzner stock watch is live",
-            message=f"Test alert. Watching: {_spec_summary(cfg)}",
+            title="TEST - Hetzner stock watch (not a real alert)",
+            message=f"THIS IS A TEST, nothing is in stock. Channel check. Watching: {_spec_summary(cfg)}",
             priority="default",
             tags="white_check_mark",
         )
@@ -756,7 +792,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0 if delivered else 1
 
     if args.reset_state:
-        save_seen(cfg.state_file, ())
+        save_seen(cfg.state_file, (), spec=_spec_summary(cfg))
 
     if args.fixture:
         with open(args.fixture, encoding="utf-8") as stream:
