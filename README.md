@@ -1,13 +1,17 @@
 # hetzner-stock-watch
 
-Watches the Hetzner Cloud API and pushes a phone notification the moment a
-**32 GB cost-optimized server** (x86 `cx`/`cpx` or Arm64 `cax`) is actually
-buyable in a region you care about.
+Watches the Hetzner Cloud API and pushes a phone notification the moment a server
+type is actually buyable in a location you care about. **Out of the box it waits for
+`cx33` (8 GB, cost-optimized) in `nbg1`**, the location of the server to be rescaled
+(confirm yours with `curl -s http://169.254.169.254/hetzner/v1/metadata/availability-zone`).
+It pushes when the plan becomes available (with the steps: shut down, pick CX33, click
+Rescale) and once more when it sells out again. `available` is a signal, not a
+guarantee; the Rescale page is the final check.
 
 - One dependency-free Python script (`check_hetzner.py`, standard library only).
 - Runs on GitHub Actions on a schedule; alerts through [ntfy.sh](https://ntfy.sh) or any webhook.
 - Alerts **once** per (server type, location) — a plan that stays in stock will not
-  re-notify you every five minutes.
+  re-notify you on every poll.
 
 ---
 
@@ -95,7 +99,8 @@ crowd out the CI you actually depend on.
 |---|---|---|---|
 | `*/5 * * * *` | ~8,770 | ~8,770 | no — ~$35/mo over |
 | `*/10 * * * *` | ~4,380 | ~4,380 | no — ~$8/mo over |
-| `*/30 * * * *` (default) | ~1,460 | ~1,460 | only if ~half your allowance is free |
+| `*/15 * * * *` (default) | ~2,920 | ~2,920 | free on a public repo; tight on a private one |
+| `*/30 * * * *` | ~1,460 | ~1,460 | only if ~half your allowance is free |
 
 Check what's left before committing to a private schedule:
 
@@ -149,24 +154,24 @@ minutes are free, and don't graft unrelated jobs onto this repo.
 
 ## Tuning what it watches
 
-Defaults: **≥ 30 GB RAM**, **shared vCPU** (the cost-optimized `cx`/`cpx`/`cax` lines),
-**any location**. That is deliberately broad — it catches every 32 GB cost-optimized
-plan on both architectures without hardcoding model names that Hetzner renames between
-generations.
+Defaults (environment): `SERVER_TYPES=cx33`, `LOCATIONS=nbg1`. The old broad watch
+(≥ 30 GB RAM, shared vCPU, any location) is still available: set `SERVER_TYPES=*` and
+`LOCATIONS=*`, then use the memory/price filters below. Changing the watch resets the
+saved state, so a changed spec never reads as a sell-out.
 
 Narrow it with **repository variables** (Settings → Secrets and variables → Variables,
 or `gh variable set`) — no code change needed:
 
 | Variable | Default | Example |
 |---|---|---|
-| `MIN_MEMORY_GB` | `30` | `60` |
+| `MIN_MEMORY_GB` | `30` (only when `SERVER_TYPES=*`) | `60` |
 | `MAX_MEMORY_GB` | *(none)* | `32` — pins it to 32 GB exactly |
 | `MAX_PRICE_MONTHLY` | *(none)* | `80` — ignore anything dearer (gross, incl. VAT) |
 | `CPU_TYPES` | `shared` | `shared,dedicated` or `*` for any |
 | `ARCHITECTURES` | *(any)* | `arm` or `x86` |
-| `LOCATIONS` | *(any)* | `fsn1,nbg1,hel1` for EU only |
+| `LOCATIONS` | `nbg1` | `fsn1,nbg1,hel1` for EU only |
 | `SERVER_TYPE_FAMILIES` | *(any)* | `cx,cax` to drop the pricier `cpx` line |
-| `SERVER_TYPES` | *(none)* | `cx52,cax41` — exact allowlist, overrides every filter above |
+| `SERVER_TYPES` | `cx33` | `cx52,cax41` — exact allowlist, overrides every filter above |
 | `INCLUDE_DEPRECATED` | `false` | `true` to also accept sunsetting plans |
 | `NOTIFY_MODE` | `new` | `always` (alert every run) / `never` (log only) |
 | `CURRENCY` | `EUR` | label only, for the price shown in alerts |
@@ -255,9 +260,9 @@ deduplication state means a false positive costs you one notification, not a str
 
 ## Repeat-alert suppression
 
-The set of already-announced `type@location` pairs is written to `.state/seen.json` and
-carried between runs by the Actions cache. You get one alert per pair; if a plan sells
-out and comes back, the pair disappears from the set and the return is announced again.
+The set of in-stock `type@location` pairs is written to `.state/seen.json` and carried
+between runs by the Actions cache. You get one push when a pair appears and one when it
+disappears (a lower-priority "sold out again"); nothing in between.
 
 To deliberately re-alert on everything currently in stock:
 
@@ -271,6 +276,6 @@ gh workflow run monitor.yml -f reset_state=true
 check_hetzner.py                  the checker: fetch, filter, dedupe, notify
 .github/workflows/monitor.yml     the schedule + manual dispatch
 .github/workflows/tests.yml       runs the suite on every push
-tests/test_check_hetzner.py       23 tests, standard library only
+tests/test_check_hetzner.py       32 tests, standard library only
 tests/fixture_server_types.json   sample API response covering the tricky cases
 ```

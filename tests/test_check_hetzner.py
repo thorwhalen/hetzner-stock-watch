@@ -187,7 +187,59 @@ class TestCheckDeduplication(unittest.TestCase):
             self.assertNotIn("ccx33", body)
 
 
+class TestTransitions(unittest.TestCase):
+    """cx33@nbg1 flips available -> unavailable -> available across polls."""
+
+    def _poll(self, tmp, sent, available, **cfg_kwargs):
+        types = [{
+            "name": "cx33", "memory": 8, "cpu_type": "shared", "architecture": "x86",
+            "locations": [{"name": "nbg1", "available": available}],
+        }]
+        cfg = _cfg(state_file=os.path.join(tmp, "seen.json"), ntfy_topic="t",
+                   server_types=("cx33",), locations=("nbg1",), **cfg_kwargs)
+        import check_hetzner
+
+        original = check_hetzner.notify
+        check_hetzner.notify = lambda _c, **kw: (sent.append(kw), ["ntfy"])[1]
+        try:
+            return check(cfg, server_types_source=lambda _c: types,
+                         locations_source=lambda _c: {}, now=NOW)
+        finally:
+            check_hetzner.notify = original
+
+    def test_alerts_on_both_transitions_and_not_in_between(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sent = []
+            self._poll(tmp, sent, False)
+            self.assertEqual(sent, [], "unavailable from the start: silent")
+            self._poll(tmp, sent, True)
+            self.assertEqual(len(sent), 1)
+            self.assertIn("Rescale", sent[0]["message"])
+            self._poll(tmp, sent, True)
+            self.assertEqual(len(sent), 1, "still available: no repeat")
+            result = self._poll(tmp, sent, False)
+            self.assertEqual(result.gone, ["cx33@nbg1"])
+            self.assertEqual(len(sent), 2)
+            self.assertIn("sold out", sent[1]["title"])
+            self._poll(tmp, sent, False)
+            self.assertEqual(len(sent), 2, "still unavailable: no repeat")
+
+    def test_state_from_a_different_spec_is_not_a_sellout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            save_seen(os.path.join(tmp, "seen.json"), {"cx52@nbg1"}, spec="old spec")
+            sent = []
+            result = self._poll(tmp, sent, False)
+            self.assertEqual(result.gone, [])
+            self.assertEqual(sent, [])
+
+
 class TestConfig(unittest.TestCase):
+    def test_env_defaults_target_cx33_at_nbg1(self):
+        cfg = Config.from_env({"HCLOUD_TOKEN": "x"})
+        self.assertEqual((cfg.server_types, cfg.locations), (("cx33",), ("nbg1",)))
+        override = Config.from_env({"HCLOUD_TOKEN": "x", "LOCATIONS": "fsn1"})
+        self.assertEqual(override.locations, ("fsn1",))
+
     def test_missing_token_is_a_clear_error(self):
         with self.assertRaises(HetznerWatchError) as ctx:
             Config.from_env({})
